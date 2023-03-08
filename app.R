@@ -1,10 +1,20 @@
 library(shiny)
+library(shinycssloaders)
+library(ggplot2)
 library(tealeaves)
 library(units)
+library(latex2exp)
+
+theme_set(
+  theme_bw() + theme(
+    axis.text = element_text(size=16),
+    axis.title = element_text(size=20)
+  )
+)
 
 ui <- fluidPage(
   
-  titlePanel("Sliders"),
+  titlePanel("Shiny tealeaves"),
   
   # Make MathJax available
   withMathJax(),
@@ -92,7 +102,8 @@ ui <- fluidPage(
         ),
         tabPanel(
           "Details",
-          textOutput("leaf_t")
+          textOutput("leaf_t"),
+          withSpinner(plotOutput("energy_balance"))
         )
       )
     )
@@ -125,17 +136,39 @@ server <- function(input, output) {
     )
     
     # And get the modeled leaf temperature
-    result <- tleaf(
+    tleaf(
       leaf_parameters, env_parameters, make_constants(), quiet=TRUE
     )
-    
-    # Drop units to play nice with renderText()
-    drop_units(result$T_leaf)
     
   })
   
   output$leaf_t <- renderText({
-    paste0(format(get_t_leaf(), digits=2), " K")
+    paste0(format(drop_units(get_t_leaf()$T_leaf), digits=2), " K")
+  })
+  
+  output$energy_balance <- renderPlot({
+    # Collect results - convert to table
+    t_leaf_result <- get_t_leaf()
+
+    t_leaf_df <- data.frame(
+      var=c(
+        "Latent heat", "Sensible heat",
+        "Absorbed radiation", "Emitted radiation"
+      ),
+      value=c(
+        -drop_units(t_leaf_result$L),
+        -drop_units(t_leaf_result$H),
+        drop_units(t_leaf_result$R_abs),
+        -drop_units(t_leaf_result$S_r)
+      )
+    )
+    
+    head(t_leaf_df)
+
+    # Plot the resulting table
+    ggplot(t_leaf_df, aes(x=var, y=value)) + geom_bar(stat="identity") +
+      labs(y=TeX("Heat density (W m$^{-2}$)"), x="")
+
   })
   
 }
