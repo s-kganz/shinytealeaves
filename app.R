@@ -1,6 +1,7 @@
 library(shiny)
 library(shinycssloaders)
 library(ggplot2)
+library(tidyr)
 library(tealeaves)
 library(units)
 library(latex2exp)
