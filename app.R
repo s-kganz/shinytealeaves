@@ -8,9 +8,26 @@ library(latex2exp)
 theme_set(
   theme_bw() + theme(
     axis.text = element_text(size=16),
-    axis.title = element_text(size=20)
+    axis.title = element_text(size=20),
+    legend.position = "none"
   )
 )
+
+# Global vars that control the sensitivity plot
+VAR_NAMES <- list(
+  "Emissivity"="abs_l",
+  "Shortwave absorptance"="abs_s",
+  "Stomatal conductance (umol m-2 s-1 Pa-1)"="g_sw",
+  "Cuticular conductance (umol m-2 s-1 Pa-1)"="g_uw",
+  "Leaf size (cm)"="leafsize",
+  "Atmospheric Pressure (kPa)"="P",
+  "Albedo (unitless)"="r",
+  "Relative humidity"="RH",
+  "Downwelling shortwave radiation (umol m-2 s-1)"="S_sw",
+  "Air temperature (K)"="T_air",
+  "Wind speed (m/s)"="wind"
+)
+N_POINTS <- 10
 
 ui <- fluidPage(
   
@@ -71,9 +88,9 @@ ui <- fluidPage(
                   value = 0.2, step=0.01),
       
       sliderInput("RH", 
-                  "Relative humidity (%)",
-                  min = 0, max = 100,
-                  value = 50, step=1),
+                  "Relative humidity",
+                  min = 0, max = 1,
+                  value = 0.5, step=0.01),
       
       sliderInput("S_sw", 
                   "Downwelling shortwave radiation (W m\\(^{-2}\\))",
@@ -97,13 +114,23 @@ ui <- fluidPage(
       8,
       tabsetPanel(
         tabPanel(
-          "Plot",
-          plotOutput("plot")
+          "Fluxes",
+          withSpinner(plotOutput("energy_balance")),
+          textOutput("single_leaf_t")
         ),
+        
         tabPanel(
-          "Details",
-          textOutput("leaf_t"),
-          withSpinner(plotOutput("energy_balance"))
+          "Plot",
+          fluidRow(withSpinner(plotOutput("plot"))),
+          fluidRow(
+            column(
+              width=6,
+              # Selectors
+              selectInput("plot_var", "Variable", names(VAR_NAMES)),
+              numericInput("plot_var_lower", "Lower bound", 0.90),
+              numericInput("plot_var_upper", "Upper bound", 1.00),
+            )
+          )
         )
       )
     )
@@ -112,7 +139,7 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
-  get_t_leaf <- reactive({
+  get_single_leaf_parameters <- reactive({
     # Collect all the parameters
     env_parameters <- make_enviropar(
       list(
@@ -135,20 +162,30 @@ server <- function(input, output) {
       )
     )
     
+    list(leaf=leaf_parameters, env=env_parameters)
+  })
+  
+  get_single_t_leaf <- reactive({
+    
+    parameters <- get_single_leaf_parameters()
+    #print(parameters)
+    
     # And get the modeled leaf temperature
     tleaf(
-      leaf_parameters, env_parameters, make_constants(), quiet=TRUE
+      parameters$leaf, parameters$env, make_constants(), quiet=TRUE
     )
     
   })
   
-  output$leaf_t <- renderText({
-    paste0(format(drop_units(get_t_leaf()$T_leaf), digits=2), " K")
+  output$single_leaf_t <- renderText({
+    paste0("Leaf temperature is ",
+           format(drop_units(get_single_t_leaf()$T_leaf), digits=2), 
+           " K")
   })
   
   output$energy_balance <- renderPlot({
-    # Collect results - convert to table
-    t_leaf_result <- get_t_leaf()
+    # Collect fluxes and convert to table
+    t_leaf_result <- get_single_t_leaf()
 
     t_leaf_df <- data.frame(
       var=c(
@@ -163,12 +200,64 @@ server <- function(input, output) {
       )
     )
     
-    head(t_leaf_df)
+    #head(t_leaf_df)
 
-    # Plot the resulting table
-    ggplot(t_leaf_df, aes(x=var, y=value)) + geom_bar(stat="identity") +
-      labs(y=TeX("Heat density (W m$^{-2}$)"), x="")
+    # Plot the different fluxes
+    ggplot(t_leaf_df, aes(x=var, y=value)) + 
+      geom_bar(aes(fill=var), stat="identity") +
+      labs(y="Heat density (W m^-2)", x="") +
+      ylim(-1500, 1500)
+      
 
+  })
+  
+  get_sensitivity_leaf_parameters <- reactive({
+    # Start with the single leaf parameters and then edit the one
+    # being used for sensitivity
+    parameters <- get_single_leaf_parameters()
+    
+    # Collect variable to be plotted on the x-axis
+    plot_var_code <- VAR_NAMES[[input$plot_var]] # varname in code
+    plot_var_lower <- input$plot_var_lower
+    plot_var_upper <- input$plot_var_upper
+    
+    plot_var_range <- seq(from=plot_var_lower, to=plot_var_upper,
+                          length.out=N_POINTS)
+    
+    # Accessors vary slightly depending on if the variable is leaf or
+    # environmental.
+    if (plot_var_code %in% names(parameters$env)) {
+      set_units(plot_var_range, units(parameters$env[[plot_var_code]]), mode="standard")
+      parameters$env[[plot_var_code]] <- plot_var_range
+    } else {
+      set_units(plot_var_range, units(parameters$leaf[[plot_var_code]]), mode="standard")
+      parameters$leaf[[plot_var_code]] <- plot_var_range
+    }
+    
+    return(parameters)
+  })
+  
+  get_sensitivity_t_leaf <- reactive({
+    parameters <- get_sensitivity_leaf_parameters()
+    tleaves(parameters$leaf, parameters$env, make_constants(), quiet=TRUE)
+  })
+  
+  output$plot <- renderPlot({
+    # We need the parameters and the varname for setting up the x-axis
+    par <- get_sensitivity_leaf_parameters()
+    plot_var_code <- VAR_NAMES[[input$plot_var]]
+    
+    yax <- drop_units(get_sensitivity_t_leaf()$T_leaf)
+    xax <- ifelse(plot_var_code %in% names(par$env),
+                  par$env[plot_var_code],
+                  par$leaf[plot_var_code])[[1]]
+    
+    #print(yax)
+    #print(xax)
+    
+    ggplot(NULL) +
+      geom_point(aes(x=xax, y=yax), size=2) +
+      labs(x=input$plot_var, y="Leaf temperature (K)")
   })
   
 }
