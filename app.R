@@ -258,6 +258,7 @@ server <- function(input, output) {
     
     ggplot(NULL) +
       geom_point(aes(x=xax, y=yax), size=2) +
+      geom_line(aes(x=xax, y=yax), linetype="dashed") +
       labs(x=input$plot_var, y="Leaf temperature (K)")
   })
   
