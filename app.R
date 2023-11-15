@@ -9,6 +9,8 @@ theme_set(
   theme_bw() + theme(
     axis.text = element_text(size=16),
     axis.title = element_text(size=20),
+    legend.title = element_text(size=16),
+    legend.text = element_text(size=16),
     legend.position = "none"
   )
 )
@@ -17,12 +19,12 @@ theme_set(
 VAR_NAMES <- list(
   "Emissivity"="a_lw",
   "Shortwave absorptance"="a_sw",
-  "Stomatal conductance (umol m-2 s-1)"="gs",
+  "Stomatal conductance (mol m-2 s-1)"="gs",
   "Atmospheric Pressure (kPa)"="Pa",
   "Relative humidity"="RH",
   "Downwelling shortwave radiation (W m-2 s-1)"="SW_dir",
   "Downwelling longwave radiation (W m-2 s-1)"="LW_down",
-  "Air temperature (K)"="T_air",
+  "Air temperature (K)"="Ta",
   "Wind speed (m/s)"="wind"
 )
 
@@ -210,9 +212,13 @@ server <- function(input, output) {
   output$plot_param_change <- renderPlot({
     # Get the variable that we are plotting over
     xax_var <- VAR_NAMES[[input$plot_var]]
+    
+    if (!is.finite(input$plot_var_lower)) {}
+    
     xax_values <- seq(
-      from=input$plot_var_lower,
-      to=input$plot_var_upper,
+      # Validate input
+      from=ifelse(is.finite(input$plot_var_lower), input$plot_var_lower, 0),
+      to=ifelse(is.finite(input$plot_var_upper), input$plot_var_upper, 0),
       length.out=N_POINTS
     )
     
@@ -238,9 +244,16 @@ server <- function(input, output) {
     output_tl <- model_output$Tl
     
     ggplot(NULL) +
-      geom_point(aes(x=xax_values, y=output_tl)) +
+      geom_line(aes(x=xax_values, y=output_tl, color="Leaf"), linewidth=2) +
+      geom_point(aes(x=xax_values, y=output_tl, color="Leaf"), size=3) +
+      geom_line(aes(x=xax_values, y=envpar$Ta, color="Air"), linewidth=2) +
       labs(x=input$plot_var,
-           y="Temperature (K)")
+           y="Temperature (K)",
+           color="") +
+      scale_color_manual(
+        values=c("Leaf"="forestgreen", "Air"="black")
+      ) +
+      theme(legend.position = "right")
   })
   
 }
