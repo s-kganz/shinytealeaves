@@ -52,7 +52,8 @@ ui <- fluidPage(
           h4("Input variables"),
           tableOutput("input_var_description"),
           h4("Output variables"),
-          tableOutput("output_var_description")
+          tableOutput("output_var_description"),
+          HTML("<p>Written by <a href=https://github.com/s-kganz>me</a> <a href=https://github.com/s-kganz/shinytealeaves>(source)</a>")
         ),
         
         tabPanel(
