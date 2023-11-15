@@ -2,9 +2,8 @@ library(shiny)
 library(shinycssloaders)
 library(ggplot2)
 library(tidyr)
-library(tealeaves)
-library(units)
 library(latex2exp)
+source("leaf_eb_still.R")
 
 theme_set(
   theme_bw() + theme(
@@ -16,18 +15,17 @@ theme_set(
 
 # Global vars that control the sensitivity plot
 VAR_NAMES <- list(
-  "Emissivity"="abs_l",
-  "Shortwave absorptance"="abs_s",
-  "Stomatal conductance (umol m-2 s-1 Pa-1)"="g_sw",
-  "Cuticular conductance (umol m-2 s-1 Pa-1)"="g_uw",
-  "Leaf size (cm)"="leafsize",
-  "Atmospheric Pressure (kPa)"="P",
-  "Albedo (unitless)"="r",
+  "Emissivity"="a_lw",
+  "Shortwave absorptance"="a_sw",
+  "Stomatal conductance (umol m-2 s-1)"="gs",
+  "Atmospheric Pressure (kPa)"="Pa",
   "Relative humidity"="RH",
-  "Downwelling shortwave radiation (umol m-2 s-1)"="S_sw",
+  "Downwelling shortwave radiation (W m-2 s-1)"="SW_dir",
+  "Downwelling longwave radiation (W m-2 s-1)"="LW_down",
   "Air temperature (K)"="T_air",
   "Wind speed (m/s)"="wind"
 )
+
 N_POINTS <- 10
 
 ui <- fluidPage(
@@ -47,24 +45,19 @@ ui <- fluidPage(
       width = 2,
       style = "height: 90vh; overflow-y: auto;",
       
-      sliderInput("abs_l", "Emissivity (unitless)",
+      sliderInput("a_lw", "Emissivity (unitless)",
                   min = 0.8, max = 1,
                   value = 0.95, step=0.01),
        
-      sliderInput("abs_s", "Shortwave absorptance (unitless)",
+      sliderInput("a_sw", "Shortwave absorptance (unitless)",
                   min = 0, max = 1,
                   value = 0.5, step=0.01),
       
       sliderInput(
-        "g_sw", 
-        "Stomatal conductance (mmol m\\(^{-2}\\) s\\(^{-1}\\))",
-        min = 0, max = 1000, value = 100, step=10
+        "gs", 
+        "Stomatal conductance (mol m\\(^{-2}\\) s\\(^{-1}\\))",
+        min = 0, max = 1, value = 0.1, step=0.01
       ),
-      
-      sliderInput("leafsize", 
-                  "Leaf size (cm)",
-                  min = 0, max = 50,
-                  value = 10, step=1),
       
     ),
     # Env parameters
@@ -72,7 +65,7 @@ ui <- fluidPage(
       width = 2,
       style = "height: 90vh; overflow-y: auto;",
       
-      sliderInput("P", 
+      sliderInput("Pa", 
                   "Atmospheric pressure (kPa)",
                   min = 0, max = 100,
                   value = 100, step=1),
@@ -82,7 +75,7 @@ ui <- fluidPage(
                   min = 0, max = 1,
                   value = 0.5, step=0.01),
       
-      sliderInput("SW_down", 
+      sliderInput("SW_dir", 
                   "Downwelling shortwave radiation (W m\\(^{-2}\\))",
                   min = 0, max = 1200,
                   value = 800, step=10),
@@ -92,12 +85,12 @@ ui <- fluidPage(
                   min = 0, max = 400,
                   value=300, step=10),
       
-      sliderInput("T_air", 
+      sliderInput("Ta", 
                   "Air temperature (K)",
                   min = 275, max = 325,
                   value = 298, step=1),
       
-      sliderInput("wind", 
+      sliderInput("u", 
                   "Wind speed (m s\\(^{-1}\\))",
                   min = 0, max = 20,
                   value = 2, step=0.2),
@@ -111,11 +104,11 @@ ui <- fluidPage(
         tabPanel(
           "Energy budget",
           withSpinner(plotOutput("plot_energy_budget")),
-          textOutput("single_leaf_t")
+          tableOutput("single_leaf_t")
         ),
         
         tabPanel(
-          "Plot",
+          "Sensitivity plot",
           fluidRow(withSpinner(plotOutput("plot_param_change"))),
           fluidRow(
             column(
@@ -134,34 +127,120 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
-  get_single_leaf_parameters <- reactive({
-    # Stub
+  get_model_parameters <- reactive({
+    
+    # Later functions may need to modify these lists, so read all the values
+    # of the input to make them editable later
+    this_envpar <- eb_envpar
+    this_constants <- eb_constants
+    
+    envpar_common <- intersect(names(eb_envpar), names(input))
+    constants_common <- intersect(names(eb_constants), names(input))
+    
+    for (name in envpar_common) {this_envpar[name] <- input[[name]]}
+    for (name in constants_common) {this_constants[name] <- input[[name]]}
+    
+    list(envpar=this_envpar, constants=this_constants)
+
   })
   
   get_single_t_leaf <- reactive({
     
-    list(
-      Tleaf=0,
-      LE=100,
-      R_in=200,
-      R_out=300
+    model_parameters <- get_model_parameters()
+    envpar <- model_parameters$envpar
+    constants <- model_parameters$constants
+    
+    leaf_temperature_isothermal(
+      Ta=envpar$Ta, Pa=envpar$Pa, RH=envpar$RH, u=envpar$u, 
+      gs=envpar$gs,
+      SW_dir=envpar$SW_dir, SW_dif=0, SW_out=0, LW_down=envpar$LW_down,
+      G=0, constants=constants
     )
+  })
+  
+  output$single_leaf_t <- renderTable({
+    
+    model_output <- get_single_t_leaf()
+    
+    values <- model_output[c("Tl", "omega", "gtot", "LE", "Rn")] 
+    
+    parnames <- c(
+      "Leaf temperature (K)", 
+      "Decoupling coefficient",
+      "Total conductance (mol / m^2 sec)",
+      "Latent heat flux (W / m^2)",
+      "Net absorbed radiation (W / m^2)"
+    )
+    
+    tibble(
+      Parameter=parnames,
+      Value=values
+    )
+    
+  }, align="lr", rownames=FALSE)
+  
+  output$plot_energy_budget <- renderPlot({
+    
+    model_output <- get_single_t_leaf()
+    
+    # Calculate the individual temperature forcings
+    R_emit <- input$a_lw * 5.67e-8 * input$Ta^4
+    R_abs  <- model_output$Rn + R_emit
+    
+    R_emit_forcing <- model_output$dT_coef * R_emit * -1
+    LE_forcing <- model_output$dT_coef * model_output$LE * -1
+    R_abs_forcing <- model_output$dT_coef * R_abs
+    net_dt <- model_output$Tl - input$Ta
+    
+    plot_df <- data.frame(
+      x=c("Absorbed radiation", "Emitted radiation", "Latent heat", 
+          "Net leaf - air T difference"),
+      y=c(R_abs_forcing, R_emit_forcing, LE_forcing, net_dt)
+    )
+    plot_df$label <- paste(sprintf("%+.2f", plot_df$y), "K")
+    
+    ggplot(plot_df, aes(x=x, y=y)) + 
+      geom_bar(aes(fill=x), stat="identity") +
+      geom_label(aes(y=0, label=label), size=5) +
+      labs(x="", y="Temperature forcing (K)") +
+      ylim(-10, 10)
     
   })
   
-  output$single_leaf_t <- renderText({
-    paste0("Leaf temperature is ",
-           format(get_single_t_leaf()$Tleaf, digits=2), 
-           " K")
-  })
-  
-  output$plot_energy_budget <- renderPlot({
-    ggplot(NULL, aes(x=1:10, y=1:10)) + geom_point()
-  })
-  
-  
   output$plot_param_change <- renderPlot({
-    ggplot(NULL, aes(x=1:10, y=1:10)) + geom_point()
+    # Get the variable that we are plotting over
+    xax_var <- VAR_NAMES[[input$plot_var]]
+    xax_values <- seq(
+      from=input$plot_var_lower,
+      to=input$plot_var_upper,
+      length.out=N_POINTS
+    )
+    
+    # Update the model input
+    model_parameters <- get_model_parameters()
+    envpar <- model_parameters$envpar
+    constants <- model_parameters$constants
+    
+    if (xax_var %in% names(constants)) {
+      constants[[xax_var]] <- xax_values
+    } else {
+      envpar[[xax_var]] <- xax_values
+    }
+    
+    # Run the model
+    model_output <- leaf_temperature_isothermal(
+      Ta=envpar$Ta, Pa=envpar$Pa, RH=envpar$RH, u=envpar$u, 
+      gs=envpar$gs, # mmol to mol 
+      SW_dir=envpar$SW_dir, SW_dif=0, SW_out=0, LW_down=envpar$LW_down,
+      G=0, constants=constants
+    )
+    
+    output_tl <- model_output$Tl
+    
+    ggplot(NULL) +
+      geom_point(aes(x=xax_values, y=output_tl)) +
+      labs(x=input$plot_var,
+           y="Temperature (K)")
   })
   
 }
