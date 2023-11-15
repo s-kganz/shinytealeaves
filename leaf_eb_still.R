@@ -395,7 +395,8 @@ leaf_temperature_isothermal <- function(Ta, Pa, RH, u, gs, SW_dir, SW_dif,
     LE_imp=LE_imp,
     LE_eq=LE_eq,
     Y=Y,
-    Rn=Rn
+    Rn=Rn,
+    dT_coef=Y / (gbH * constants$cp * constants$Mair)
   )
 }
 
