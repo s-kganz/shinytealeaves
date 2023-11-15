@@ -3,6 +3,7 @@ library(shinycssloaders)
 library(ggplot2)
 library(tidyr)
 library(latex2exp)
+library(htmltools)
 source("leaf_eb_still.R")
 
 theme_set(
@@ -32,14 +33,51 @@ N_POINTS <- 10
 
 ui <- fluidPage(
   
-  titlePanel("Shiny tealeaves"),
+  #titlePanel("Shiny tealeaves"),
   
   # Make MathJax available
   withMathJax(),
 
   fluidRow(
     
-    # Define all the tealeaves parameters. One column for leaf params, one
+    # Tabs to plot leaf T as a function of a variable or look at the detailed
+    # components of the energy balance budget.
+    column(
+      8,
+      tabsetPanel(
+        
+        tabPanel(
+          "About",
+          includeMarkdown("info.md"),
+          h4("Input variables"),
+          tableOutput("input_var_description"),
+          h4("Output variables"),
+          tableOutput("output_var_description")
+        ),
+        
+        tabPanel(
+          "Energy budget",
+          withSpinner(plotOutput("plot_energy_budget")),
+          tableOutput("single_leaf_t")
+        ),
+        
+        tabPanel(
+          "Sensitivity plot",
+          fluidRow(withSpinner(plotOutput("plot_param_change"))),
+          fluidRow(
+            column(
+              width=6,
+              # Selectors
+              selectInput("plot_var", "Variable", names(VAR_NAMES)),
+              numericInput("plot_var_lower", "Lower bound", 0.90),
+              numericInput("plot_var_upper", "Upper bound", 1.00),
+            )
+          )
+        )
+      )
+    ),
+    
+    # Define all the model parameters. One column for leaf params, one
     # for env params.
     
     # Leaf parameters
@@ -97,32 +135,6 @@ ui <- fluidPage(
                   min = 0, max = 20,
                   value = 2, step=0.2),
       
-    ),
-    # Tabs to plot leaf T as a function of a variable or look at the detailed
-    # components of the energy balance budget.
-    column(
-      8,
-      tabsetPanel(
-        tabPanel(
-          "Energy budget",
-          withSpinner(plotOutput("plot_energy_budget")),
-          tableOutput("single_leaf_t")
-        ),
-        
-        tabPanel(
-          "Sensitivity plot",
-          fluidRow(withSpinner(plotOutput("plot_param_change"))),
-          fluidRow(
-            column(
-              width=6,
-              # Selectors
-              selectInput("plot_var", "Variable", names(VAR_NAMES)),
-              numericInput("plot_var_lower", "Lower bound", 0.90),
-              numericInput("plot_var_upper", "Upper bound", 1.00),
-            )
-          )
-        )
-      )
     )
   )
 )
@@ -254,6 +266,40 @@ server <- function(input, output) {
         values=c("Leaf"="forestgreen", "Air"="black")
       ) +
       theme(legend.position = "right")
+  })
+  
+  output$input_var_description <- renderTable({
+    tab <- data.frame(
+      matrix(
+        c("Emissivity", "Fraction of infrared light absorbed by the leaf surface",
+          "Shortwave absorptance", "Fraction of visible light absorbed by the leaf surface",
+          "Stomatal conductance", "Rate at which water diffuses out of the leaf",
+          "Atmospheric pressure", "Barometric pressure of air around the leaf",
+          "Relative humidity", "Relative amount of moisture in the air",
+          "Downwelling shortwave radiation", "Amount of energy in the form of visible light reaching the leaf surface",
+          "Downwelling longwave radiation", "Amount of energy in the form of infrared light reaching the leaf surface",
+          "Air temperature", "Absolute temperature of air around the leaf",
+          "Wind speed", "Speed of air moving along the surface of the leaf"),
+        ncol=2, byrow=TRUE
+      )
+    )
+    names(tab) <- c("Parameter", "Description")
+    return(tab)
+  })
+  
+  output$output_var_description <- renderTable({
+    tab <- data.frame(
+      matrix(
+        c("Leaf temperature", "Absolute temperature of the leaf surface",
+          "Decoupling coefficient", "Number in range 0-1 indicating whether the latent heat flux is determined by stomata (0) or surrounding air (1)",
+          "Total conductance", "Total conductance of water vapor, accounting for the leaf boundary layer and stomatal conductance",
+          "Latent heat flux", "Amount of energy leaving the leaf due to evaporated water",
+          "Net absorbed radiation", "Amount of energy reaching the leaf surface due to surrounding light"),
+        ncol=2, byrow=TRUE
+      )
+    )
+    names(tab) <- c("Parameter", "Description")
+    return(tab)
   })
   
 }
