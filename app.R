@@ -4,6 +4,8 @@ library(ggplot2)
 library(tidyr)
 library(latex2exp)
 library(htmltools)
+library(rmarkdown)
+library(markdown) # just to be safe lol
 source("leaf_eb_still.R")
 
 theme_set(
