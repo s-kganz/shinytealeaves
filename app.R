@@ -115,8 +115,8 @@ ui <- fluidPage(
       
       sliderInput("RH", 
                   "Relative humidity",
-                  min = 0, max = 1,
-                  value = 0.5, step=0.01),
+                  min = 0, max = 100,
+                  value = 50, step=1),
       
       sliderInput("SW_dir", 
                   "Downwelling shortwave radiation (W m\\(^{-2}\\))",
