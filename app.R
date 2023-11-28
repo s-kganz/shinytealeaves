@@ -49,16 +49,6 @@ ui <- fluidPage(
       tabsetPanel(
         
         tabPanel(
-          "About",
-          includeMarkdown("info.md"),
-          h4("Input variables"),
-          tableOutput("input_var_description"),
-          h4("Output variables"),
-          tableOutput("output_var_description"),
-          HTML("<p>Written by <a href=https://github.com/s-kganz>me</a> <a href=https://github.com/s-kganz/shinytealeaves>(source)</a>")
-        ),
-        
-        tabPanel(
           "Energy budget",
           withSpinner(plotOutput("plot_energy_budget")),
           tableOutput("single_leaf_t")
@@ -76,6 +66,16 @@ ui <- fluidPage(
               numericInput("plot_var_upper", "Upper bound", 1.00),
             )
           )
+        ),
+        
+        tabPanel(
+          "About",
+          includeMarkdown("info.md"),
+          h4("Input variables"),
+          tableOutput("input_var_description"),
+          h4("Output variables"),
+          tableOutput("output_var_description"),
+          HTML("<p>Written by <a href=https://github.com/s-kganz>me</a> <a href=https://github.com/s-kganz/shinytealeaves>(source)</a>")
         )
       )
     ),
